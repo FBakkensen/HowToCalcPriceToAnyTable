@@ -79,17 +79,11 @@ codeunit 50100 "Calc. Price Buffer - Price" implements "Line With Price"
         Resource: Record Resource;
     begin
         PriceCalculationBuffer."Price Calculation Method" := CalcPriceBuffer."Price Calculation Method";
-        // Tax
-        PriceCalculationBuffer."Prices Including Tax" := SalesHeader."Prices Including VAT";
-        PriceCalculationBuffer."Tax %" := SalesLine."VAT %";
-        PriceCalculationBuffer."VAT Calculation Type" := SalesLine."VAT Calculation Type".AsInteger();
-        PriceCalculationBuffer."VAT Bus. Posting Group" := SalesLine."VAT Bus. Posting Group";
-        PriceCalculationBuffer."VAT Prod. Posting Group" := SalesLine."VAT Prod. Posting Group";
 
         case PriceCalculationBuffer."Asset Type" of
             PriceCalculationBuffer."Asset Type"::Item:
                 begin
-                    PriceCalculationBuffer."Variant Code" := SalesLine."Variant Code";
+                    PriceCalculationBuffer."Variant Code" := CalcPriceBuffer."Variant Code";
                     Item.Get(PriceCalculationBuffer."Asset No.");
                     PriceCalculationBuffer."Unit Price" := Item."Unit Price";
                     PriceCalculationBuffer."Item Disc. Group" := Item."Item Disc. Group";
@@ -98,29 +92,27 @@ codeunit 50100 "Calc. Price Buffer - Price" implements "Line With Price"
                 end;
             PriceCalculationBuffer."Asset Type"::Resource:
                 begin
-                    PriceCalculationBuffer."Work Type Code" := SalesLine."Work Type Code";
+                    PriceCalculationBuffer."Work Type Code" := CalcPriceBuffer."Work Type Code";
                     Resource.Get(PriceCalculationBuffer."Asset No.");
                     PriceCalculationBuffer."Unit Price" := Resource."Unit Price";
                     if PriceCalculationBuffer."VAT Prod. Posting Group" = '' then
                         PriceCalculationBuffer."VAT Prod. Posting Group" := Resource."VAT Prod. Posting Group";
                 end;
         end;
-        PriceCalculationBuffer."Location Code" := SalesLine."Location Code";
-        PriceCalculationBuffer."Document Date" := GetDocumentDate();
+        PriceCalculationBuffer."Location Code" := CalcPriceBuffer."Location Code";
+        PriceCalculationBuffer."Document Date" := CalcPriceBuffer."Calculation Date";
 
         // Currency
-        PriceCalculationBuffer.Validate("Currency Code", SalesHeader."Currency Code");
-        PriceCalculationBuffer."Currency Factor" := SalesHeader."Currency Factor";
+        PriceCalculationBuffer.Validate("Currency Code", CalcPriceBuffer."Currency Code");
+        PriceCalculationBuffer."Currency Factor" := CalcPriceBuffer."Currency Factor";
 
         // UoM
-        PriceCalculationBuffer.Quantity := Abs(SalesLine.Quantity);
-        PriceCalculationBuffer."Unit of Measure Code" := SalesLine."Unit of Measure Code";
-        PriceCalculationBuffer."Qty. per Unit of Measure" := SalesLine."Qty. per Unit of Measure";
+        PriceCalculationBuffer.Quantity := Abs(CalcPriceBuffer.Quantity);
+        PriceCalculationBuffer."Unit of Measure Code" := CalcPriceBuffer."Unit of Measure Code";
+        PriceCalculationBuffer."Qty. per Unit of Measure" := CalcPriceBuffer."Qty. per Unit of Measure";
         // Discounts
-        PriceCalculationBuffer."Line Discount %" := SalesLine."Line Discount %";
+        PriceCalculationBuffer."Line Discount %" := CalcPriceBuffer."Line Discount %";
         PriceCalculationBuffer."Allow Line Disc." := IsDiscountAllowed();
-        PriceCalculationBuffer."Allow Invoice Disc." := SalesLine."Allow Invoice Disc.";
-        OnAfterFillBuffer(PriceCalculationBuffer, SalesHeader, SalesLine);
     end;
 
     local procedure AddSources()
@@ -130,66 +122,43 @@ codeunit 50100 "Calc. Price Buffer - Price" implements "Line With Price"
             CurrPriceType::Sale:
                 AddCustomerSources();
             CurrPriceType::Purchase:
-                PriceSourceList.Add("Price Source Type"::"All Vendors");
+                AddVendorSources();
         end;
-        PriceSourceList.AddJobAsSources(SalesLine."Job No.", SalesLine."Job Task No.");
-        OnAfterAddSources(SalesHeader, SalesLine, CurrPriceType, PriceSourceList);
     end;
 
     local procedure AddCustomerSources()
     begin
         PriceSourceList.Add("Price Source Type"::"All Customers");
-        PriceSourceList.Add("Price Source Type"::Customer, SalesHeader."Bill-to Customer No.");
-        PriceSourceList.Add("Price Source Type"::Contact, SalesHeader."Bill-to Contact No.");
-        PriceSourceList.Add("Price Source Type"::Campaign, SalesHeader."Campaign No.");
+        PriceSourceList.Add("Price Source Type"::Customer, CalcPriceBuffer.CustomerVendorNo);
+        PriceSourceList.Add("Price Source Type"::Contact, CalcPriceBuffer."Contact No.");
         AddActivatedCampaignsAsSource();
-        PriceSourceList.Add("Price Source Type"::"Customer Price Group", SalesLine."Customer Price Group");
-        PriceSourceList.Add("Price Source Type"::"Customer Disc. Group", SalesLine."Customer Disc. Group");
+        PriceSourceList.Add("Price Source Type"::"Customer Price Group", CalcPriceBuffer."Customer Price Group");
+        PriceSourceList.Add("Price Source Type"::"Customer Disc. Group", CalcPriceBuffer."Customer Disc. Group");
     end;
 
-    local procedure GetDocumentDate() DocumentDate: Date;
+    local procedure AddVendorSources()
     begin
-        if SalesHeader."No." = '' then
-            DocumentDate := SalesLine."Posting Date"
-        else
-            if SalesHeader."Document Type" in
-                [SalesHeader."Document Type"::Invoice, SalesHeader."Document Type"::"Credit Memo"]
-            then
-                DocumentDate := SalesHeader."Posting Date"
-            else
-                DocumentDate := SalesHeader."Order Date";
-        if DocumentDate = 0D then
-            DocumentDate := WorkDate();
-        OnAfterGetDocumentDate(DocumentDate, SalesHeader, SalesLine);
+        PriceSourceList.Add("Price Source Type"::"All Vendors");
+        PriceSourceList.Add("Price Source Type"::Vendor, CalcPriceBuffer.CustomerVendorNo);
+        PriceSourceList.Add("Price Source Type"::Contact, CalcPriceBuffer."Contact No.");
     end;
 
     procedure SetPrice(AmountType: Enum "Price Amount Type"; PriceListLine: Record "Price List Line")
-    var
-        IsHandled: Boolean;
     begin
-        IsHandled := false;
-        OnBeforeSetPrice(SalesLine, PriceListLine, AmountType, IsHandled);
-        if IsHandled then
-            exit;
-
         case AmountType of
             AmountType::Price:
                 case CurrPriceType of
                     CurrPriceType::Sale:
                         begin
-                            SalesLine."Unit Price" := PriceListLine."Unit Price";
-                            if PriceListLine.IsRealLine() then
-                                SalesLine."Allow Line Disc." := PriceListLine."Allow Line Disc.";
-                            SalesLine."Allow Invoice Disc." := PriceListLine."Allow Invoice Disc.";
+                            CalcPriceBuffer."Unit Price" := PriceListLine."Unit Price";
                             PriceCalculated := true;
                         end;
                     CurrPriceType::Purchase:
-                        SalesLine."Unit Cost (LCY)" := PriceListLine."Unit Cost";
+                        CalcPriceBuffer."Unit Price" := PriceListLine."Unit Cost";
                 end;
             AmountType::Discount:
-                SalesLine."Line Discount %" := PriceListLine."Line Discount %";
+                CalcPriceBuffer."Line Discount %" := PriceListLine."Line Discount %";
         end;
-        OnAfterSetPrice(SalesLine, PriceListLine, AmountType);
     end;
 
     procedure ValidatePrice(AmountType: enum "Price Amount Type")
@@ -197,27 +166,16 @@ codeunit 50100 "Calc. Price Buffer - Price" implements "Line With Price"
         case AmountType of
             AmountType::Discount:
                 begin
-                    SalesLine.TestField("Allow Line Disc.");
-                    SalesLine.Validate("Line Discount %");
+                    CalcPriceBuffer.Validate("Line Discount %");
                 end;
             AmountType::Price:
                 case CurrPriceType of
                     CurrPriceType::Sale:
-                        SalesLine.Validate("Unit Price");
+                        CalcPriceBuffer.Validate("Unit Price");
                     CurrPriceType::Purchase:
-                        SalesLine.Validate("Unit Cost (LCY)");
+                        CalcPriceBuffer.Validate("Unit Price");
                 end;
         end;
-
-        OnAfterValidatePrice(SalesLine, CurrPriceType, AmountType);
-    end;
-
-    procedure Update(AmountType: enum "Price Amount Type")
-    begin
-        if not SalesLine."Allow Line Disc." then
-            SalesLine."Line Discount %" := 0;
-
-        OnAfterUpdate(SalesLine, CurrPriceType, AmountType);
     end;
 
     procedure AddActivatedCampaignsAsSource()
@@ -339,5 +297,35 @@ codeunit 50100 "Calc. Price Buffer - Price" implements "Line With Price"
     [IntegrationEvent(false, false)]
     local procedure OnAfterFindCustomerCampaigns(CustomerNo: Code[20]; var TempCampaignTargetGr: Record "Campaign Target Group" temporary; var Found: Boolean)
     begin
+    end;
+
+    procedure SetLine(PriceType: enum "Price Type"; Header: Variant; Line: Variant);
+    begin
+
+    end;
+
+    procedure GetLine(var Header: Variant; var Line: Variant);
+    begin
+
+    end;
+
+    procedure GetAssetType(): enum "Price Asset Type";
+    begin
+        exit(CalcPriceBuffer."Price Asset Type");
+    end;
+
+    procedure IsPriceUpdateNeeded(AmountType: enum "Price Amount Type"; FoundPrice: Boolean; CalledByFieldNo: Integer): Boolean;
+    begin
+        exit(true);
+    end;
+
+    procedure IsDiscountAllowed(): Boolean;
+    begin
+        exit(true);
+    end;
+
+    procedure Update(AmountType: enum "Price Amount Type");
+    begin
+
     end;
 }
