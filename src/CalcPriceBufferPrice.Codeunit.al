@@ -1,4 +1,4 @@
-codeunit 50100 "Calc. Price Buffer - Price" implements "Line With Price"
+codeunit 50200 "Calc. Price Buffer - Price" implements "Line With Price"
 {
     var
         CalcPriceBuffer: Record "Calc. Price Buffer";
@@ -69,7 +69,6 @@ codeunit 50100 "Calc. Price Buffer - Price" implements "Line With Price"
 
         FillBuffer(PriceCalculationBuffer);
         PriceCalculationBufferMgt.Set(PriceCalculationBuffer, PriceSourceList);
-        OnCopyToBufferOnAfterPriceCalculationBufferMgtSet(PriceCalculationBufferMgt, PriceCalculationBuffer, PriceSourceList);
         exit(true);
     end;
 
@@ -154,7 +153,7 @@ codeunit 50100 "Calc. Price Buffer - Price" implements "Line With Price"
                             PriceCalculated := true;
                         end;
                     CurrPriceType::Purchase:
-                        CalcPriceBuffer."Unit Price" := PriceListLine."Unit Cost";
+                        CalcPriceBuffer."Unit Price" := PriceListLine."Direct Unit Cost";
                 end;
             AmountType::Discount:
                 CalcPriceBuffer."Line Discount %" := PriceListLine."Line Discount %";
@@ -210,7 +209,6 @@ codeunit 50100 "Calc. Price Buffer - Price" implements "Line With Price"
         CampaignTargetGr.SetRange(Type, CampaignTargetGr.Type::Customer);
         CampaignTargetGr.SetRange("No.", CustomerNo);
         Found := CampaignTargetGr.CopyTo(TempCampaignTargetGr);
-        OnAfterFindCustomerCampaigns(CustomerNo, TempCampaignTargetGr, Found);
     end;
 
     local procedure FindContactCompanyCampaigns(ContactNo: Code[20]; var TempCampaignTargetGr: Record "Campaign Target Group" temporary) Found: Boolean
@@ -222,91 +220,17 @@ codeunit 50100 "Calc. Price Buffer - Price" implements "Line With Price"
             CampaignTargetGr.SetRange(Type, CampaignTargetGr.Type::Contact);
             CampaignTargetGr.SetRange("No.", Contact."Company No.");
             Found := CampaignTargetGr.CopyTo(TempCampaignTargetGr);
-            OnAfterFindContactCompanyCampaigns(ContactNo, TempCampaignTargetGr, Found);
         end;
-    end;
-
-    [IntegrationEvent(false, false)]
-    local procedure OnAfterGetAssetType(SalesLine: Record "Sales Line"; var AssetType: Enum "Price Asset Type")
-    begin
-    end;
-
-    [IntegrationEvent(false, false)]
-    local procedure OnAfterAddSources(
-        SalesHeader: Record "Sales Header"; SalesLine: Record "Sales Line";
-        PriceType: Enum "Price Type"; var PriceSourceList: Codeunit "Price Source List")
-    begin
-    end;
-
-    [IntegrationEvent(false, false)]
-    local procedure OnAfterFillBuffer(
-        var PriceCalculationBuffer: Record "Price Calculation Buffer"; SalesHeader: Record "Sales Header"; SalesLine: Record "Sales Line")
-    begin
-    end;
-
-    [IntegrationEvent(false, false)]
-    local procedure OnAfterGetDocumentDate(var DocumentDate: Date; SalesHeader: Record "Sales Header"; SalesLine: Record "Sales Line")
-    begin
-    end;
-
-    [IntegrationEvent(false, false)]
-    local procedure OnAfterSetPrice(var SalesLine: Record "Sales Line"; PriceListLine: Record "Price List Line"; AmountType: Enum "Price Amount Type")
-    begin
-    end;
-
-    [IntegrationEvent(false, false)]
-    local procedure OnAfterUpdate(var SalesLine: Record "Sales Line"; CurrPriceType: Enum "Price Type"; AmountType: Enum "Price Amount Type")
-    begin
-    end;
-
-    [IntegrationEvent(false, false)]
-    local procedure OnBeforeSetPrice(var SalesLine: Record "Sales Line"; PriceListLine: Record "Price List Line"; AmountType: Enum "Price Amount Type"; var IsHandled: Boolean)
-    begin
-    end;
-
-    [IntegrationEvent(false, false)]
-    local procedure OnBeforeVerify(CalcPriceBuffer: Record "Sales Header"; SalesLine: Record "Sales Line"; var IsHandled: Boolean)
-    begin
-    end;
-
-    [IntegrationEvent(false, false)]
-    local procedure OnCopyToBufferOnAfterPriceCalculationBufferMgtSet(var PriceCalculationBufferMgt: Codeunit "Price Calculation Buffer Mgt."; PriceCalculationBuffer: Record "Price Calculation Buffer"; var PriceSourceList: Codeunit "Price Source List")
-    begin
-    end;
-
-    [IntegrationEvent(false, false)]
-    local procedure OnAfterIsDiscountAllowed(SalesLine: Record "Sales Line"; PriceCalculated: Boolean; var Result: Boolean)
-    begin
-    end;
-
-    [IntegrationEvent(false, false)]
-    local procedure OnAfterValidatePrice(var SalesLine: Record "Sales Line"; CurrPriceType: Enum "Price Type"; AmountType: Enum "Price Amount Type")
-    begin
-    end;
-
-    [IntegrationEvent(false, false)]
-    local procedure OnAfterIsPriceUpdateNeeded(AmountType: Enum "Price Amount Type"; FoundPrice: Boolean; CalledByFieldNo: Integer; var Result: Boolean; SalesLine: Record "Sales Line")
-    begin
-    end;
-
-    [IntegrationEvent(false, false)]
-    local procedure OnAfterFindContactCompanyCampaigns(ContactNo: Code[20]; var TempCampaignTargetGr: Record "Campaign Target Group" temporary; var Found: Boolean)
-    begin
-    end;
-
-    [IntegrationEvent(false, false)]
-    local procedure OnAfterFindCustomerCampaigns(CustomerNo: Code[20]; var TempCampaignTargetGr: Record "Campaign Target Group" temporary; var Found: Boolean)
-    begin
     end;
 
     procedure SetLine(PriceType: enum "Price Type"; Header: Variant; Line: Variant);
     begin
-
+        SetLine(PriceType, Line);
     end;
 
     procedure GetLine(var Header: Variant; var Line: Variant);
     begin
-
+        GetLine(Line);
     end;
 
     procedure GetAssetType(): enum "Price Asset Type";

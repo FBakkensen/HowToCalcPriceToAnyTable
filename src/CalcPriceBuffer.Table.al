@@ -1,4 +1,4 @@
-table 50100 "Calc. Price Buffer"
+table 50200 "Calc. Price Buffer"
 {
     Caption = 'CalcPrice';
     TableType = Temporary;
@@ -115,12 +115,18 @@ table 50100 "Calc. Price Buffer"
                     "Price Asset Type"::"Service Cost":
                         UpdateFromServiceCost();
                 end;
+                CalcPrice();
             end;
         }
         field(22; "Variant Code"; Code[10])
         {
             Caption = 'Variant Code';
             TableRelation = if ("Price Asset Type" = const(Item)) "Item Variant".Code where("Item No." = field("No."));
+
+            trigger OnValidate()
+            begin
+                CalcPrice();
+            end;
         }
         field(23; "Work Type Code"; Code[10])
         {
@@ -144,15 +150,21 @@ table 50100 "Calc. Price Buffer"
         {
             Caption = 'Quantity';
             DecimalPlaces = 0 : 5;
+
+            trigger OnValidate()
+            begin
+                CalcPrice();
+            end;
+
         }
 
         field(100; "Unit Of Measure Code"; Code[10])
         {
             Caption = 'Unit Of Measure Code';
             TableRelation =
-            if ("Price Asset Type" = const(Item)) "Item Unit of Measure".Code
+            if ("Price Asset Type" = const(Item)) "Item Unit of Measure".Code where("Item No." = field("No."))
             else
-            if ("Price Asset Type" = const(Resource)) "Resource Unit of Measure"
+            if ("Price Asset Type" = const(Resource)) "Resource Unit of Measure".Code where("Resource No." = field("No."))
             else
             if ("Price Asset Type" = const("Service Cost")) "Unit of Measure".Code;
 
@@ -161,6 +173,7 @@ table 50100 "Calc. Price Buffer"
                 UnitofMeasureManagement: Codeunit "Unit of Measure Management";
             begin
                 SetQtyPerUnitOfMeasure();
+                CalcPrice();
             end;
         }
 
@@ -174,6 +187,11 @@ table 50100 "Calc. Price Buffer"
         field(200; "Calculation Date"; Date)
         {
             Caption = 'Calculation Date';
+
+            trigger OnValidate()
+            begin
+                CalcPrice();
+            end;
         }
         field(300; "Currency Code"; Code[10])
         {
@@ -187,7 +205,8 @@ table 50100 "Calc. Price Buffer"
                 else
                     Currency.Get("Currency Code");
 
-                UpdateCurrencyFactor()
+                UpdateCurrencyFactor();
+                CalcPrice();
             end;
         }
         field(310; "Currency Factor"; Decimal)
@@ -203,27 +222,6 @@ table 50100 "Calc. Price Buffer"
             DecimalPlaces = 0 : 5;
             MaxValue = 100;
             MinValue = 0;
-
-            trigger OnValidate()
-            begin
-                ValidateLineDiscountPercent(true);
-            end;
-        }
-        field(501; "Line Discount Amount"; Decimal)
-        {
-            AutoFormatExpression = "Currency Code";
-            AutoFormatType = 1;
-            Caption = 'Line Discount Amount';
-
-            trigger OnValidate()
-            begin
-                "Line Discount Amount" := Round("Line Discount Amount", Currency."Amount Rounding Precision");
-
-                if xRec."Line Discount Amount" <> "Line Discount Amount" then
-                    UpdateLineDiscPct();
-
-                UpdateAmounts();
-            end;
         }
         field(502; "Unit Price"; Decimal)
         {
@@ -240,27 +238,6 @@ table 50100 "Calc. Price Buffer"
         {
             Caption = 'Recalculate Invoice Disc.';
             Editable = false;
-        }
-        field(505; "Line Amount"; Decimal)
-        {
-            AutoFormatExpression = "Currency Code";
-            AutoFormatType = 1;
-            Caption = 'Line Amount';
-
-            trigger OnValidate()
-            var
-                MaxLineAmount: Decimal;
-            begin
-                TestField("Price Asset Type");
-                TestField(Quantity);
-                TestField("Unit Price");
-
-                "Line Amount" := Round("Line Amount", Currency."Amount Rounding Precision");
-                MaxLineAmount := Round(Quantity * "Unit Price", Currency."Amount Rounding Precision");
-                CheckLineAmount(MaxLineAmount);
-
-                Validate("Line Discount Amount", MaxLineAmount - "Line Amount");
-            end;
         }
     }
     keys
@@ -425,56 +402,6 @@ table 50100 "Calc. Price Buffer"
         end;
     end;
 
-    local procedure ValidateLineDiscountPercent(DropInvoiceDiscountAmount: Boolean)
-    begin
-        "Line Discount Amount" :=
-          Round(
-            Round(Quantity * "Unit Price", Currency."Amount Rounding Precision") *
-            "Line Discount %" / 100, Currency."Amount Rounding Precision");
-
-        UpdateAmounts();
-    end;
-
-    local procedure UpdateLineDiscPct()
-    var
-        LineDiscountPct: Decimal;
-        IsOutOfStandardDiscPctRange: Boolean;
-    begin
-        if Round(Quantity * "Unit Price", Currency."Amount Rounding Precision") <> 0 then begin
-            LineDiscountPct := Round(
-                "Line Discount Amount" / Round(Quantity * "Unit Price", Currency."Amount Rounding Precision") * 100,
-                0.00001);
-            IsOutOfStandardDiscPctRange := not (LineDiscountPct in [0 .. 100]);
-            if IsOutOfStandardDiscPctRange then
-                Error(LineDiscountPctErr);
-            "Line Discount %" := LineDiscountPct;
-        end else
-            "Line Discount %" := 0;
-    end;
-
-    procedure UpdateAmounts()
-    var
-        LineAmount: Decimal;
-    begin
-        if "Price Asset Type" = "Price Asset Type"::" " then
-            exit;
-
-        "Recalculate Invoice Disc." := true;
-
-        "Line Amount" := Round(Quantity * "Unit Price", Currency."Amount Rounding Precision") - "Line Discount Amount";
-    end;
-
-    local procedure CheckLineAmount(MaxLineAmount: Decimal)
-    begin
-        if "Line Amount" < 0 then
-            if "Line Amount" < MaxLineAmount then
-                Error(LineAmountInvalidErr);
-
-        if "Line Amount" > 0 then
-            if "Line Amount" > MaxLineAmount then
-                Error(LineAmountInvalidErr);
-    end;
-
     local procedure UpdateContactFromCustomer(CustomerNo: Code[20])
     var
         ContactBusinessRelation: Record "Contact Business Relation";
@@ -519,6 +446,45 @@ table 50100 "Calc. Price Buffer"
                     "Contact No." := '';
             end;
         end;
+    end;
+
+    local procedure CalcPrice()
+    var
+        PriceCalculation: Interface "Price Calculation";
+    begin
+        TestField("Qty. per Unit of Measure");
+
+
+        GetPriceCalculationHandler(PriceCalculation);
+
+        PriceCalculation.ApplyDiscount();
+        PriceCalculation.ApplyPrice(0);
+        GetLineWithCalculatedPrice(PriceCalculation);
+    end;
+
+    procedure GetPriceCalculationHandler(var PriceCalculation: Interface "Price Calculation")
+    var
+        PriceCalculationMgt: codeunit "Price Calculation Mgt.";
+        LineWithPrice: Interface "Line With Price";
+    begin
+        GetLineWithPrice(LineWithPrice);
+        LineWithPrice.SetLine("Price Type", Rec);
+        PriceCalculationMgt.GetHandler(LineWithPrice, PriceCalculation);
+    end;
+
+    procedure GetLineWithPrice(var LineWithPrice: Interface "Line With Price")
+    var
+        CalcPriceBufferPrice: Codeunit "Calc. Price Buffer - Price";
+    begin
+        LineWithPrice := CalcPriceBufferPrice;
+    end;
+
+    local procedure GetLineWithCalculatedPrice(var PriceCalculation: Interface "Price Calculation")
+    var
+        Line: Variant;
+    begin
+        PriceCalculation.GetLine(Line);
+        Rec := Line;
     end;
 
     var
